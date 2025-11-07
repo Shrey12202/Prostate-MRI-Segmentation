@@ -4,8 +4,8 @@ from pathlib import Path
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
-from src.utils.metrics import DiceLoss, dice_coef
-from src.config import cfg
+from metrics import DiceLoss, dice_coef
+from config import cfg
 
 def make_optim(model):
     opt = AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)

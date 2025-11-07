@@ -6,7 +6,7 @@ from typing import Tuple
 import torch
 import torchvision.transforms.functional as TF
 
-from src.config import cfg
+from config import cfg
 
 class SliceAugmentor:
     def __init__(self):

@@ -6,7 +6,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.config import cfg
+from config import cfg
 
 def conv_block(cin, cout):
     return nn.Sequential(
