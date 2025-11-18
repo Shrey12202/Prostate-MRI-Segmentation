@@ -7,7 +7,7 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 
 from src.config import cfg
-from src.models.unet_decoder import UNetDecoder
+from src.unet_decoder import UNetDecoder
 
 def parse_args():
     ap = argparse.ArgumentParser()

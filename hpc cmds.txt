@@ -1,0 +1,2 @@
+conda activate /scratch/sbv2019/envs/prostate
+

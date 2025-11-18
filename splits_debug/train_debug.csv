@@ -1,0 +1,2 @@
+ID,t2,adc,dwi,t2_anatomy_reader1,t2_tumor_reader1,adc_tumor_reader1,t2_anatomy_reader2,adc_tumor_reader2
+20,train/020/t2.nii.gz,train/020/adc.nii.gz,train/020/dwi.nii.gz,train/020/t2_anatomy_reader1.nii.gz,train/020/t2_tumor_reader1.nii.gz,train/020/adc_tumor_reader1.nii.gz,,train/020/adc_tumor_reader2.nii.gz

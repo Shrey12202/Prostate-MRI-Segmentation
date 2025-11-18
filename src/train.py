@@ -6,9 +6,9 @@ from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 
 from src.config import cfg
-from src.models.unet_decoder import UNetDecoder
-from src.data.dataset import make_loader
-from src.utils.train_utils import make_optim, save_ckpt, log_scalar, step_metrics
+from src.unet_decoder import UNetDecoder
+from src.dataset import make_loader
+from src.train_utils import make_optim, save_ckpt, log_scalar, step_metrics
 
 def parse_args():
     ap = argparse.ArgumentParser()

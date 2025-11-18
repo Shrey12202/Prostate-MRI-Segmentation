@@ -13,7 +13,7 @@ import torchvision.transforms.functional as TF
 from typing import Optional, Tuple
 
 from src.config import cfg
-from src.data.augmentation import SliceAugmentor
+from src.augmentation import SliceAugmentor
 
 class SliceDataset(Dataset):
     def __init__(self, manifest_csv: Path, split_csv: Optional[Path], embeddings_dir: Path, augment: bool=False):

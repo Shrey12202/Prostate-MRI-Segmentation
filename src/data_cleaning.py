@@ -11,7 +11,7 @@ from skimage.transform import resize
 from skimage.io import imsave
 from typing import Tuple, List, Dict
 
-from src.config import cfg
+from config import cfg
 
 def robust_min_max(x: np.ndarray, p_lo: float, p_hi: float) -> Tuple[float, float]:
     lo = np.percentile(x, p_lo)

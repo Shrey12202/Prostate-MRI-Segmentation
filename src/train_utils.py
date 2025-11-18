@@ -4,7 +4,8 @@ from pathlib import Path
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
-from src.utils.metrics import DiceLoss, dice_coef
+
+from src.metrics import DiceLoss, dice_coef
 from src.config import cfg
 
 def make_optim(model):
