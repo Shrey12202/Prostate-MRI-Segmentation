@@ -1,181 +1,149 @@
-"""Main pipeline runner for MedSAM → U-Net Decoder (Prostate158)."""
-
-
-
 import os
-
+import sys
+import subprocess
+import warnings
 from pathlib import Path
 
-import subprocess
-
+# internal imports
 from config import cfg
-
-from data_cleaning import run_cleaning
-
-
-
-def discover_pairs(raw_root: Path):
-
-    """
-
-    Finds (image, mask) pairs for Prostate158-style dataset.
-
-    Supports both .nii and .nii.gz, and both 'tumour'/'tumor' spellings.
-
-    Works for nested structure like test_dataset/test/001/.
-
-    """
-
-    pairs = []
-
-    for subdir, _, files in os.walk(raw_root):
-
-        subdir_path = Path(subdir)
-
-        for f in files:
-
-            f_low = f.lower()
-
-
-
-            # Look for t2 or adc MRI image files
-
-            if ("t2" in f_low or "adc" in f_low) and not ("tumor" in f_low or "tumour" in f_low):
-
-                img_path = subdir_path / f
-
-
-
-                # Determine matching mask names
-
-                if "t2" in f_low:
-
-                    possible_masks = ["t2_tumor_reader1.nii", "t2_tumor_reader1.nii.gz",
-
-                                      "t2_tumour_reader1.nii", "t2_tumour_reader1.nii.gz"]
-
-                elif "adc" in f_low:
-
-                    possible_masks = ["adc_tumor_reader1.nii", "adc_tumor_reader1.nii.gz",
-
-                                      "adc_tumour_reader1.nii", "adc_tumour_reader1.nii.gz"]
-
-                else:
-
-                    continue
-
-
-
-                # Look for mask file in same folder
-
-                mask_path = None
-
-                for m in possible_masks:
-
-                    if (subdir_path / m).exists():
-
-                        mask_path = subdir_path / m
-
-                        break
-
-
-
-                if mask_path:
-
-                    pairs.append((img_path, mask_path))
-
-                    print(f"✅ Found pair: {img_path.relative_to(raw_root)} <-> {mask_path.relative_to(raw_root)}")
-
-                else:
-
-                    print(f"⚠️ No mask found for {img_path.relative_to(raw_root)}")
-
-
-
-    if not pairs:
-
-        raise RuntimeError(f"No image/mask pairs found under {raw_root}")
-
-    print(f"\n✅ Total pairs found: {len(pairs)}\n")
-
-    return pairs
-
-    
-
-import warnings
+from data_cleaning import run_cleaning, generate_test_manifest
 
 warnings.filterwarnings("ignore")
 
-print("========== Step 1: Data Cleaning ==========")
+# --------------------------------------------------------------------
+#  Path Setup
+# --------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-raw_data_root: Path = Path("/home/pg2825/Prostate-MRI-Segmentation-main/test_dataset")
+raw_train_root = PROJECT_ROOT / "test_dataset" / "valid"
+raw_test_csv  = PROJECT_ROOT / "test.csv"
+raw_test_root = PROJECT_ROOT / "test_dataset" / "test"
 
-# Example: Path("/scratch/<username>/Prostate158_small")
+preprocessed_dir = Path("/scratch/sbv2019/mri/experiments/preprocessed_debug")
+embeddings_dir   = Path("/scratch/sbv2019/mri/experiments/embeddings_debug")
+splits_dir       = Path("/scratch/sbv2019/mri/experiments/splits_debug")
+ckpt_dir         = Path("/scratch/sbv2019/mri/checkpoints_debug")
+pred_dir_test    = Path("/scratch/sbv2019/mri/experiments/preds_test")
+
+for d in [preprocessed_dir, embeddings_dir, splits_dir, ckpt_dir, pred_dir_test]:
+    d.mkdir(parents=True, exist_ok=True)
+
+PYTHON = sys.executable
+env = os.environ.copy()
+env["PYTHONPATH"] = str(PROJECT_ROOT)
+
+# --------------------------------------------------------------------
+#  Step 1 - Preprocess TRAIN
+# --------------------------------------------------------------------
+print("========== Step 1A: Train Preprocessing ==========")
+
+# discover T2 + prostate mask pairs
+train_pairs = []
+for subdir, _, files in os.walk(raw_train_root):
+    subdir = Path(subdir)
+    if "t2.nii.gz" in files and "t2_anatomy_reader1.nii.gz" in files:
+        train_pairs.append((
+            subdir / "t2.nii.gz",
+            subdir / "t2_anatomy_reader1.nii.gz"
+        ))
+
+run_cleaning(train_pairs, preprocessed_dir)
+print("✅ Training data preprocessed.")
+
+# --------------------------------------------------------------------
+#  Step 1B - Preprocess TEST (slice-level PNGs)
+# --------------------------------------------------------------------
+print("========== Step 1B: Test Preprocessing ==========")
+
+test_manifest = generate_test_manifest(
+    raw_test_root = PROJECT_ROOT / "test_dataset" / "test",
+    out_dir = preprocessed_dir,
+    image_size = cfg.image_size
+)
 
 
+print(f"✅ Test manifest saved to {test_manifest}\n")
 
-# You can keep these as debug experiment dirs
+# --------------------------------------------------------------------
+# Step 2A - Embedding Extraction (TRAIN)
+# --------------------------------------------------------------------
+print("========== Step 2A: Train Embedding Extraction ==========")
 
-preprocessed_dir: Path = Path("/scratch/pg2825/mri/experiments/preprocessed_debug")
-
-embeddings_dir: Path = Path("/scratch/pg2825/mri/experiments/embeddings_debug")
-
-splits_dir: Path = Path("/scratch/pg2825/mri/experiments/splits_debug")
-
-ckpt_dir: Path = Path("/scratch/pg2825/mri/checkpoints_debug")
-
-
-
-pairs = discover_pairs(raw_data_root)
-"""
-run_cleaning(pairs, preprocessed_dir)
-"""
-print(f"✅ Preprocessed data saved to {preprocessed_dir}")
-
-
-
-
-print("========== Step 2: Embedding Extraction ==========")
-
-cmd_embed = [
-
-    "python", "-m", "medsam_embedder",
-
+cmd_embed_train = [
+    PYTHON, "-m", "src.medsam_embedder",
     "--checkpoint", str(cfg.medsam_ckpt),
-
     "--preprocessed_dir", str(preprocessed_dir),
-
-    "--embeddings_dir", str(embeddings_dir)
-
+    "--embeddings_dir", str(embeddings_dir),
 ]
+subprocess.run(cmd_embed_train, check=True, cwd=PROJECT_ROOT, env=env)
 
-"""subprocess.run(cmd_embed, check=True)
-"""
+print("✅ Train embeddings saved.\n")
+
+# --------------------------------------------------------------------
+# Step 2B - Embedding Extraction (TEST)
+# --------------------------------------------------------------------
+print("========== Step 2B: Test Embedding Extraction ==========")
+
+cmd_embed_test = [
+    PYTHON, "-m", "src.medsam_embedder",
+    "--checkpoint", str(cfg.medsam_ckpt),
+    "--preprocessed_dir", str(preprocessed_dir / "test"),
+    "--embeddings_dir", str(embeddings_dir / "test"),
+]
+subprocess.run(cmd_embed_test, check=True, cwd=PROJECT_ROOT, env=env)
+
+print("✅ Test embeddings saved.\n")
+
+# --------------------------------------------------------------------
+# Step 3 - Train Decoder
+# --------------------------------------------------------------------
 print("========== Step 3: Training Decoder ==========")
 
 cmd_train = [
-
-    "python", "-m", "train", "--amp",
-
+    PYTHON, "-m", "src.train",
+    "--manifest", str(preprocessed_dir / "manifest.csv"),
+    "--train_split", str(splits_dir / "train.csv"),
+    "--val_split", str(splits_dir / "val.csv"),
+    "--embeddings_dir", str(embeddings_dir),
+    "--ckpt_dir", str(ckpt_dir),
+    "--amp",
 ]
 
-subprocess.run(cmd_train, check=True)
+subprocess.run(cmd_train, check=True, cwd=PROJECT_ROOT, env=env)
+print(f"✅ Training complete. Checkpoints stored in {ckpt_dir}\n")
 
+best_checkpoint = ckpt_dir / "best.pt"
 
-
-print("========== Step 4: Inference ==========")
+# --------------------------------------------------------------------
+# Step 4 - Test Inference
+# --------------------------------------------------------------------
+print("========== Step 4: Test Inference ==========")
 
 cmd_infer = [
-
-    "python", "-m", "inference",
-
-    "--checkpoint", str(cfg.ckpt_dir/"best.pt")
-
+    PYTHON, "-m", "src.inference",
+    "--checkpoint", str(best_checkpoint),
+    "--embeddings_dir", str(embeddings_dir / "test"),
+    "--manifest", str(test_manifest),
+    "--out_dir", str(pred_dir_test),
 ]
 
-subprocess.run(cmd_infer, check=True)
+subprocess.run(cmd_infer, check=True, cwd=PROJECT_ROOT, env=env)
+print(f"✅ Test predictions saved to {pred_dir_test}\n")
 
+# --------------------------------------------------------------------
+# Step 5 - Test Evaluation
+# --------------------------------------------------------------------
+print("========== Step 5: Test Evaluation ==========")
 
+cmd_test = [
+    PYTHON, "-m", "src.test_eval",
+    "--checkpoint", str(best_checkpoint),
+    "--manifest", str(test_manifest),
+    "--embeddings_dir", str(embeddings_dir / "test"),
+]
 
-print("Pipeline complete! Predictions saved under experiments/preds.")
+subprocess.run(cmd_test, check=True, cwd=PROJECT_ROOT, env=env)
+print("🎯 Test evaluation complete!")
 
+# --------------------------------------------------------------------
+print("\n🎯 Pipeline complete! All stages finished successfully.")

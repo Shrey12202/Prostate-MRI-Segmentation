@@ -5,10 +5,10 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 
-from config import cfg
-from unet_decoder import UNetDecoder
-from dataset import make_loader
-from train_utils import make_optim, save_ckpt, log_scalar, step_metrics
+from src.config import cfg
+from src.unet_decoder import UNetDecoder
+from src.dataset import make_loader
+from src.train_utils import make_optim, save_ckpt, log_scalar, step_metrics
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -21,7 +21,7 @@ def parse_args():
     ap.add_argument("--lr", type=float, default=cfg.learning_rate)
     ap.add_argument("--ckpt_dir", type=str, default=str(cfg.ckpt_dir))
     ap.add_argument("--log_dir", type=str, default=str(cfg.log_dir))
-    ap.add_argument("--amp", action="store_true" if cfg.amp else "store_false")
+    ap.add_argument("--amp", action="store_true")
     return ap.parse_args()
 
 def main():
@@ -38,7 +38,7 @@ def main():
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
 
     global_step = 0
-    best_val = 0.0
+    best_val = 0
     for epoch in range(1, args.epochs+1):
         model.train()
         for batch in train_loader:
@@ -49,7 +49,36 @@ def main():
             opt.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast(enabled=args.amp):
                 logits = model(emb)
+                # print("logits:", logits.shape, "mask:", msk.shape)
                 loss, dice = step_metrics(logits, msk)
+
+            # ---------------- DEBUG PRINTS ----------------
+            if global_step % 500 == 0:
+                # Show basic metrics
+                print(f"[STEP {global_step}] loss={loss.item():.4f}, dice={dice:.4f}")
+            
+                # Model output stats
+                logits_sig = logits.sigmoid()
+                print("   pred_mean:", logits_sig.mean().item(), 
+                      "pred_min:", float(logits_sig.min()),
+                      "pred_max:", float(logits_sig.max()))
+            
+                # How many pixels predicted foreground?
+                pred_bin = (logits_sig > 0.5).float()
+                print("   pred foreground %:", float(pred_bin.mean())*100)
+            
+                # Ground-truth mask stats
+                print("   mask foreground %:", float(msk.float().mean())*100)
+            
+                # Check gradient flow
+                for name, p in model.named_parameters():
+                    if p.grad is not None:
+                        print(f"   grad[{name}] mean={float(p.grad.mean()):.8f}")
+                        break  # just print the first with grad
+            
+                print("-"*60)
+            # ------------------------------------------------
+
 
             scaler.scale(loss).backward()
             scaler.step(opt)
@@ -74,7 +103,7 @@ def main():
         val_dice = sum(dices)/max(1,len(dices))
         log_scalar(writer, "val/dice", val_dice, epoch)
 
-        if val_dice > best_val:
+        if epoch == 1 or val_dice > best_val:
             best_val = val_dice
             save_ckpt(model, epoch, Path(args.ckpt_dir)/"best.pt")
         save_ckpt(model, epoch, Path(args.ckpt_dir)/"last.pt")

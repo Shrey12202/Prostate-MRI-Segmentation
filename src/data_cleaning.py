@@ -13,6 +13,34 @@ from typing import Tuple, List, Dict
 
 from config import cfg
 
+def resize_slice(arr: np.ndarray, out_hw: Tuple[int, int]) -> np.ndarray:
+    """
+    Resize a 2D slice to (H, W).
+    Uses bilinear for images, nearest-neighbor for masks (auto-detected).
+    """
+    arr = arr.astype(np.float32)
+
+    # masks are binary or small integers → use nearest neighbor
+    is_mask = arr.dtype != np.float32 or np.unique(arr).shape[0] <= 5
+
+    if is_mask:
+        return resize(
+            arr,
+            out_hw,
+            order=0,             # nearest
+            anti_aliasing=False,
+            preserve_range=True,
+        ).astype(np.float32)
+
+    # images → use bilinear + anti-alias
+    return resize(
+        arr,
+        out_hw,
+        order=1,
+        anti_aliasing=True,
+        preserve_range=True,
+    ).astype(np.float32)
+
 def robust_min_max(x: np.ndarray, p_lo: float, p_hi: float) -> Tuple[float, float]:
     lo = np.percentile(x, p_lo)
     hi = np.percentile(x, p_hi)
@@ -111,7 +139,8 @@ def run_cleaning(pairs: List[Tuple[Path, Path]], out_dir: Path | None = None) ->
 
     all_records = []
     for img_p, msk_p in pairs:
-        case_id = Path(img_p).stem.split('.')[0]
+        case_id = Path(img_p).parent.name
+        # case_id = Path(img_p).stem.split('.')[0]
         all_records += clean_case(Path(img_p), Path(msk_p), out_dir, case_id)
 
     # also save a CSV manifest
@@ -122,3 +151,62 @@ def run_cleaning(pairs: List[Tuple[Path, Path]], out_dir: Path | None = None) ->
         writer.writeheader()
         writer.writerows(all_records)
     return all_records
+    
+def generate_test_manifest(raw_test_root: Path, out_dir: Path, image_size=(1024,1024)):
+    """
+    Preprocess the test set under raw_test_root and create:
+      - test_images/
+      - test_masks/
+      - test_manifest.csv (slice-level)
+    Assumes:
+      t2.nii.gz
+      t2_anatomy_reader1.nii.gz    # prostate mask
+    """
+    import nibabel as nib
+    import numpy as np
+    from tqdm import tqdm
+    import pandas as pd
+    from PIL import Image
+
+    test_img_dir = out_dir / "test" / "images"
+    test_msk_dir = out_dir / "test" / "masks"
+    test_img_dir.mkdir(parents=True, exist_ok=True)
+    test_msk_dir.mkdir(parents=True, exist_ok=True)
+
+    records = []
+
+    # Scan test patients
+    for p in sorted(raw_test_root.iterdir()):
+        if not p.is_dir():
+            continue
+
+        case_id = p.name  # e.g. "020"
+
+        t2_path = p / "t2.nii.gz"
+        msk_path = p / "t2_anatomy_reader1.nii.gz"
+
+        if not t2_path.exists() or not msk_path.exists():
+            print(f"[WARN] Skipping {case_id} (missing t2 or mask)")
+            continue
+
+        nii_img = nib.load(str(t2_path)).get_fdata()
+        nii_msk = nib.load(str(msk_path)).get_fdata()
+
+        for s in range(nii_img.shape[-1]):
+            img = nii_img[..., s]
+            msk = nii_msk[..., s]
+
+            img = resize_slice(img, image_size)
+            msk = resize_slice(msk, image_size)
+
+            img_file = test_img_dir / f"{case_id}_s{s:03d}.png"
+            msk_file = test_msk_dir / f"{case_id}_s{s:03d}.png"
+
+            Image.fromarray((img * 255).astype(np.uint8)).save(img_file)
+            Image.fromarray((msk > 0).astype(np.uint8) * 255).save(msk_file)
+
+            records.append([str(img_file), str(msk_file), case_id, s])
+
+    manifest_path = out_dir / "test_manifest.csv"
+    pd.DataFrame(records, columns=["image", "mask", "case", "slice"]).to_csv(manifest_path, index=False)
+    return manifest_path

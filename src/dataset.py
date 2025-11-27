@@ -12,15 +12,15 @@ from PIL import Image
 import torchvision.transforms.functional as TF
 from typing import Optional, Tuple
 
-from config import cfg
-from augmentation import SliceAugmentor
+from src.config import cfg
+from src.augmentation import SliceAugmentor
 
 class SliceDataset(Dataset):
     def __init__(self, manifest_csv: Path, split_csv: Optional[Path], embeddings_dir: Path, augment: bool=False):
         self.manifest = pd.read_csv(manifest_csv)
         if split_csv is not None:
             split_df = pd.read_csv(split_csv)
-            keep = set(split_df['t2'].tolist())
+            keep = set(split_df['image'].tolist())
             self.manifest = self.manifest[self.manifest['image'].isin(keep)].reset_index(drop=True)
         self.embeddings_dir = Path(embeddings_dir)
         self.augment = augment
