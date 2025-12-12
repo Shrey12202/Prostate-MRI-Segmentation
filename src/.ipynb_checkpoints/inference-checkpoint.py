@@ -27,8 +27,7 @@ def main():
     model = UNetDecoder(
         in_channels=cfg.embedding_channels,
         num_classes=cfg.num_classes,
-        stride=cfg.embedding_stride,
-        base=32
+        stride=cfg.embedding_stride
     ).to(device)
 
     state = torch.load(args.checkpoint, map_location=device)
