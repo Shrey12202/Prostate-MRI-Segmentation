@@ -11,7 +11,7 @@ from skimage.transform import resize
 from skimage.io import imsave
 from typing import Tuple, List, Dict
 
-from config import cfg
+from src.config import cfg
 
 def resize_slice(arr: np.ndarray, out_hw: Tuple[int, int]) -> np.ndarray:
     """

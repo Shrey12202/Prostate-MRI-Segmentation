@@ -21,7 +21,11 @@ class Config:
     ckpt_dir:         Path = Path("/scratch/sbv2019/mri/checkpoints_full")
     pred_dir:         Path = Path("/scratch/sbv2019/mri/experiments/preds_full")
     splits_dir:       Path = Path("/scratch/sbv2019/mri/experiments/splits_full")
+
+    # add this in cfg
+    medsam2_ckpt = Path("/scratch/sbv2019/mri/models/medsam2/MedSAM2_latest.pt")
     
+
     # Choose embedding variant here
     embedding_version = "base64"   # or "base32"
 
@@ -52,9 +56,9 @@ class Config:
     # ---------- Training ----------
     num_classes: int = 1
     # num_classes: int = 2
-    batch_size: int = 32           # small for dry run
-    num_workers: int = 8        # avoids multiprocessing issues on HPC
-    num_epochs: int = 40        # one epoch to test pipeline
+    batch_size: int = 16        # small for dry run
+    num_workers: int = 1        # avoids multiprocessing issues on HPC
+    num_epochs: int = 30      # one epoch to test pipeline
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     amp: bool = True

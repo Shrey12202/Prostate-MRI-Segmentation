@@ -86,3 +86,73 @@ def make_loader(manifest_csv: Path, split_csv: Optional[Path], embeddings_dir: P
     pin_memory=True,
     persistent_workers=pw
 )
+
+
+
+
+from torch.utils.data import Dataset, DataLoader
+from PIL import Image
+import torch
+import pandas as pd
+from pathlib import Path
+import numpy as np
+
+
+class ImageMaskDataset(Dataset):
+    """
+    Dataset that loads raw 2D image slices + masks for SAM training.
+    """
+
+    def __init__(self, manifest_csv: Path, split_csv: Path):
+        self.manifest = pd.read_csv(manifest_csv)
+        self.split = pd.read_csv(split_csv)
+
+        # Keep only rows referenced in split
+        self.df = self.manifest.merge(
+            self.split,
+            on="image",
+            how="inner"
+        )
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+
+        img_path = Path(row["image"])
+        msk_path = Path(row["mask"])
+
+        # Load image (PNG assumed)
+        img = Image.open(img_path).convert("RGB")
+        img = np.array(img).astype(np.float32) / 255.0
+        img = torch.from_numpy(img).permute(2, 0, 1)  # (3,H,W)
+
+        # Load mask
+        msk = Image.open(msk_path)
+        msk = np.array(msk)
+        msk = torch.from_numpy(msk).long()  # (H,W)
+
+        return {
+            "image": img,
+            "mask": msk,
+        }
+
+
+def make_image_loader(
+    manifest_csv: Path,
+    split_csv: Path,
+    batch_size: int,
+    shuffle: bool,
+    num_workers: int,
+):
+    ds = ImageMaskDataset(manifest_csv, split_csv)
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=False,
+    )
+

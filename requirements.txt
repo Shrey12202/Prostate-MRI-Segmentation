@@ -8,3 +8,4 @@ scikit-image
 tqdm
 tensorboard
 opencv-python
+segment-anything-py

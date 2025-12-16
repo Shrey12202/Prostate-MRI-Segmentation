@@ -11,7 +11,7 @@ from skimage.transform import resize
 from skimage.io import imsave
 from typing import Tuple, List, Dict
 
-from config import cfg
+from src.config import cfg
 
 def resize_slice(arr: np.ndarray, out_hw: Tuple[int, int]) -> np.ndarray:
     """
@@ -89,19 +89,24 @@ def clean_case(image_path: Path, mask_path: Path, out_dir: Path, case_id: str) -
     img_nii = nib.load(str(image_path))
     msk_nii = nib.load(str(mask_path))
 
-    img = np.asarray(img_nii.get_fdata(), dtype=np.float32)  # (H, W, S) or (S, H, W) depending on file
+    img = np.asarray(img_nii.get_fdata(), dtype=np.float32)  # e.g. (H, W, S)
     msk = np.asarray(msk_nii.get_fdata(), dtype=np.float32)
 
-    # Standardize to (S, H, W) = slice-first
-    if img.ndim == 3 and img.shape[0] != msk.shape[0] and img.shape[-1] == msk.shape[-1]:
-        # assume (H, W, S) -> transpose to (S, H, W)
-        img = np.moveaxis(img, -1, 0)
-        msk = np.moveaxis(msk, -1, 0)
-    elif img.ndim == 3 and img.shape[0] == msk.shape[0]:
-        # already (S, H, W)
-        pass
-    else:
-        raise ValueError(f"Unexpected shapes image={img.shape} mask={msk.shape}")
+    if img.ndim != 3 or msk.ndim != 3:
+        raise ValueError(f"Expected 3D volumes, got image={img.shape}, mask={msk.shape}")
+    if img.shape != msk.shape:
+        raise ValueError(f"Image and mask shapes differ: image={img.shape}, mask={msk.shape}")
+
+    # Treat the SMALLEST dimension as the slice axis (e.g. (442,442,27) → axis=2)
+    slice_axis = int(np.argmin(img.shape))
+
+    # Reorder to (S, H, W)
+    if slice_axis != 0:
+        img = np.moveaxis(img, slice_axis, 0)
+        msk = np.moveaxis(msk, slice_axis, 0)
+
+    # Now img.shape == msk.shape == (S, H, W), e.g. (27, 442, 442)
+
 
     records = []
     for s in range(img.shape[0]):
